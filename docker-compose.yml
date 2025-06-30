@@ -1,0 +1,58 @@
+version: "3"
+
+services:
+  # Nessie Catalog Server Using In-Memory Store
+  nessie:
+    image: projectnessie/nessie:latest
+    container_name: nessie
+    environment:
+      - QUARKUS_PROFILE=prod
+      - QUARKUS_HTTP_PORT=19120
+      - QUARKUS_LOG_CONSOLE_FORMAT=%d{yyyy-MM-dd HH:mm:ss} %-5p [%c{1.}] (%t) %s%e%n
+      - QUARKUS_LOG_LEVEL=INFO
+      - QUARKUS_DATASOURCE_DB_KIND=rocksdb
+      - QUARKUS_DATASOURCE_JDBC_URL=jdbc:rocksdb:file:///nessie/data
+      - QUARKUS_DATASOURCE_USERNAME=nessie
+      - QUARKUS_DATASOURCE_PASSWORD=nessie
+    volumes:
+      - ./nessie-data:/nessie/data  # Mount local directory to persist RocksDB data
+    ports:
+      - "19120:19120"  # Expose Nessie API port
+    networks:
+      intro-network:
+  # Minio Storage Server
+  minio:
+    image: minio/minio
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_DOMAIN=minio
+      - MINIO_REGION_NAME=us-east-1
+      - MINIO_REGION=us-east-1
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    volumes:
+      - ./minio-data:/minio-data  # Mount the local folder to container
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 5;
+      mc alias set myminio http://localhost:9000 admin password;
+      mc mb myminio/datalake;
+      mc mb myminio/datalakehouse;
+      mc mb myminio/warehouse;
+      mc mb myminio/seed;
+      mc cp /minio-data/* myminio/seed/;
+      tail -f /dev/null"
+    networks:
+      intro-network:
+
+networks:
+  intro-network:
