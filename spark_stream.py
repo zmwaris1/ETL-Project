@@ -1,0 +1,102 @@
+import pyspark
+from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    IntegerType,
+    StringType,
+    DoubleType,
+    TimestampType,
+    LongType,
+)
+import os
+from pyspark.sql.functions import *
+
+KAFKA_TOPIC_NAME = "sparkTopic2"
+KAFKA_BOOTSTRAP_SERVERS = "localhost:29092,localhost:39092,localhost:49092"
+
+os.environ["AWS_REGION"] = "us-east-1"
+os.environ["AWS_ACCESS_KEY_ID"] = "admin"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
+AWS_ACCESS_KEY = "admin"
+AWS_SECRET_KEY = "password"
+
+CATALOG_URI = "http://172.19.0.3:19120/api/v1"
+WAREHOUSE = "s3a://warehouse/"
+STORAGE_URI = "http://172.19.0.2:9000"
+
+conf = (
+    pyspark.SparkConf()
+    .setAppName("sales_data_app")
+    .set(
+        "spark.jars.packages",
+        "org.postgresql:postgresql:42.7.3,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.77.1,software.amazon.awssdk:bundle:2.17.257,software.amazon.awssdk:url-connection-client:2.17.257,org.apache.iceberg:iceberg-aws-bundle:1.5.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.5",
+    )
+    .set(
+        "spark.sql.extensions",
+        "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,org.projectnessie.spark.extensions.NessieSparkSessionExtensions",
+    )
+    .set("spark.sql.catalog.nessie", "org.apache.iceberg.spark.SparkCatalog")
+    .set("spark.sql.catalog.nessie.uri", CATALOG_URI)
+    .set("spark.sql.catalog.nessie.ref", "main")
+    .set("spark.sql.catalog.nessie.authentication.type", "NONE")
+    .set(
+        "spark.sql.catalog.nessie.catalog-impl",
+        "org.apache.iceberg.nessie.NessieCatalog",
+    )
+    .set("spark.sql.catalog.nessie.s3.endpoint", STORAGE_URI)
+    .set("spark.sql.catalog.nessie.warehouse", WAREHOUSE)
+    .set("spark.sql.catalog.nessie.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
+    .set("spark.hadoop.fs.s3a.access.key", AWS_ACCESS_KEY)
+    .set("spark.hadoop.fs.s3a.secret.key", AWS_SECRET_KEY)
+)
+
+schema = StructType(
+    [
+        StructField("VendorID", IntegerType(), True),
+        StructField("tpep_pickup_datetime", TimestampType(), True),
+        StructField("tpep_dropoff_datetime", TimestampType(), True),
+        StructField("passenger_count", LongType(), True),
+        StructField("trip_distance", DoubleType(), True),
+        StructField("RatecodeID", LongType(), True),
+        StructField("store_and_fwd_flag", StringType(), True),
+        StructField("PULocationID", IntegerType(), True),
+        StructField("DOLocationID", IntegerType(), True),
+        StructField("payment_type", LongType(), True),
+        StructField("fare_amount", DoubleType(), True),
+        StructField("extra", DoubleType(), True),
+        StructField("mta_tax", DoubleType(), True),
+        StructField("tip_amount", DoubleType(), True),
+        StructField("tolls_amount", DoubleType(), True),
+        StructField("improvement_surcharge", DoubleType(), True),
+        StructField("total_amount", DoubleType(), True),
+        StructField("congestion_surcharge", DoubleType(), True),
+        StructField("Airport_fee", DoubleType(), True),
+    ]
+)
+
+spark = SparkSession.builder.config(conf=conf).getOrCreate()
+print("Spark Session Started")
+
+df = (
+    spark.read.format("kafka")
+    .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
+    .option("subscribe", KAFKA_TOPIC_NAME)
+    .option("startingOffsets", "earliest")
+    .load()
+)
+
+parsed_df = (
+    df.selectExpr("CAST(value AS STRING)")
+    .select(from_json("value", schema).alias("data"))
+    .select("data.*")
+)
+
+spark.sql("create schema if not exists nessie.db")
+
+query = (
+    parsed_df.writeStream.format("iceberg")
+    .outputMode("complete")
+    .option("checkpointLocation", "s3a://checkpoint/")
+    .toTable("nessie.db.user_events")
+)
