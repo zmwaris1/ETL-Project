@@ -12,9 +12,9 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
 AWS_ACCESS_KEY = "admin"
 AWS_SECRET_KEY = "password"
 
-CATALOG_URI = "http://172.19.0.3:19120/api/v1"
-WAREHOUSE = "s3a://warehouse/"
-STORAGE_URI = "http://172.19.0.2:9000"
+CATALOG_URI = "http://172.19.0.2:19120/api/v1"
+WAREHOUSE = "s3a://datalakehouse/"
+STORAGE_URI = "http://172.19.0.3:9000"
 
 conf = (
     pyspark.SparkConf()
