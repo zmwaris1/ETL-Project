@@ -22,7 +22,7 @@ AWS_ACCESS_KEY = "admin"
 AWS_SECRET_KEY = "password"
 
 CATALOG_URI = "http://172.19.0.3:19120/api/v1"
-WAREHOUSE = "s3a://warehouse/"
+WAREHOUSE = "s3a://streamhouse/"
 STORAGE_URI = "http://172.19.0.2:9000"
 
 conf = (
@@ -30,7 +30,7 @@ conf = (
     .setAppName("sales_data_app")
     .set(
         "spark.jars.packages",
-        "org.postgresql:postgresql:42.7.3,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.77.1,software.amazon.awssdk:bundle:2.17.257,software.amazon.awssdk:url-connection-client:2.17.257,org.apache.iceberg:iceberg-aws-bundle:1.5.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.5",
+        "org.postgresql:postgresql:42.7.3,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.77.1,software.amazon.awssdk:bundle:2.17.257,software.amazon.awssdk:url-connection-client:2.17.257,org.apache.iceberg:iceberg-aws-bundle:1.5.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.5,org.apache.hadoop:hadoop-aws:3.3.1",
     )
     .set(
         "spark.sql.extensions",
@@ -49,6 +49,7 @@ conf = (
     .set("spark.sql.catalog.nessie.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
     .set("spark.hadoop.fs.s3a.access.key", AWS_ACCESS_KEY)
     .set("spark.hadoop.fs.s3a.secret.key", AWS_SECRET_KEY)
+    .set("spark.sql.adaptive.enabled", "false")
 )
 
 schema = StructType(
@@ -79,7 +80,7 @@ spark = SparkSession.builder.config(conf=conf).getOrCreate()
 print("Spark Session Started")
 
 df = (
-    spark.read.format("kafka")
+    spark.readStream.format("kafka")
     .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
     .option("subscribe", KAFKA_TOPIC_NAME)
     .option("startingOffsets", "earliest")
@@ -96,7 +97,12 @@ spark.sql("create schema if not exists nessie.db")
 
 query = (
     parsed_df.writeStream.format("iceberg")
-    .outputMode("complete")
-    .option("checkpointLocation", "s3a://checkpoint/")
+    .outputMode("append")
+    .option(
+        "checkpointLocation",
+        "file:///home/zmwaris1/Documents/my_files/ETL-Project/checkpoint",
+    )
     .toTable("nessie.db.user_events")
 )
+
+query.awaitTermination()

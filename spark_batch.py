@@ -12,16 +12,16 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
 AWS_ACCESS_KEY = "admin"
 AWS_SECRET_KEY = "password"
 
-CATALOG_URI = "http://172.19.0.2:19120/api/v1"
+CATALOG_URI = "http://172.19.0.3:19120/api/v1"
 WAREHOUSE = "s3a://datalakehouse/"
-STORAGE_URI = "http://172.19.0.3:9000"
+STORAGE_URI = "http://172.19.0.2:9000"
 
 conf = (
     pyspark.SparkConf()
     .setAppName("sales_data_app")
     .set(
         "spark.jars.packages",
-        "org.postgresql:postgresql:42.7.3,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.77.1,software.amazon.awssdk:bundle:2.17.257,software.amazon.awssdk:url-connection-client:2.17.257,org.apache.iceberg:iceberg-aws-bundle:1.5.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.5",
+        "org.postgresql:postgresql:42.7.3,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2,org.projectnessie.nessie-integrations:nessie-spark-extensions-3.5_2.12:0.77.1,software.amazon.awssdk:bundle:2.17.257,software.amazon.awssdk:url-connection-client:2.17.257,org.apache.iceberg:iceberg-aws-bundle:1.5.2,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.5,org.apache.hadoop:hadoop-aws:3.3.1",
     )
     .set(
         "spark.sql.extensions",
