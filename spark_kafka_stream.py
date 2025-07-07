@@ -1,3 +1,5 @@
+# import dependencies
+
 import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
@@ -12,6 +14,7 @@ from pyspark.sql.types import (
 import os
 from pyspark.sql.functions import *
 
+# define variables
 KAFKA_TOPIC_NAME = "sparkTopic2"
 KAFKA_BOOTSTRAP_SERVERS = "localhost:29092,localhost:39092,localhost:49092"
 
@@ -21,10 +24,11 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = "password"
 AWS_ACCESS_KEY = "admin"
 AWS_SECRET_KEY = "password"
 
-CATALOG_URI = "http://172.19.0.3:19120/api/v1"
-WAREHOUSE = "s3a://streamhouse/"
-STORAGE_URI = "http://172.19.0.2:9000"
+CATALOG_URI = "http://172.19.0.2:19120/api/v1"
+WAREHOUSE = "s3a://user-events-store"
+STORAGE_URI = "http://172.19.0.3:9000"
 
+# set spark configurations
 conf = (
     pyspark.SparkConf()
     .setAppName("sales_data_app")
@@ -52,6 +56,7 @@ conf = (
     .set("spark.sql.adaptive.enabled", "false")
 )
 
+# define event schema
 schema = StructType(
     [
         StructField("VendorID", IntegerType(), True),
@@ -76,9 +81,14 @@ schema = StructType(
     ]
 )
 
+# create spark session
 spark = SparkSession.builder.config(conf=conf).getOrCreate()
 print("Spark Session Started")
 
+# create schema/namespaece in nessie catalog
+spark.sql("create schema if not exists nessie.db")
+
+# Extract - read events from Kafka
 df = (
     spark.readStream.format("kafka")
     .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
@@ -87,22 +97,21 @@ df = (
     .load()
 )
 
+# Transform - transform events to columns
 parsed_df = (
     df.selectExpr("CAST(value AS STRING)")
     .select(from_json("value", schema).alias("data"))
     .select("data.*")
 )
 
-spark.sql("create schema if not exists nessie.db")
-
-query = (
-    parsed_df.writeStream.format("iceberg")
+# Load - load events to iceberg tables
+query = (df.writeStream.format("iceberg")
     .outputMode("append")
     .option(
         "checkpointLocation",
         "file:///home/zmwaris1/Documents/my_files/ETL-Project/checkpoint",
-    )
-    .toTable("nessie.db.user_events")
+    ).trigger(once=True)
+    .toTable("nessie.db.raw_user_events")
 )
 
 query.awaitTermination()
