@@ -82,36 +82,67 @@ schema = StructType(
 )
 
 # create spark session
-spark = SparkSession.builder.config(conf=conf).getOrCreate()
-print("Spark Session Started")
+def spark_session(conf):
+    spark = SparkSession.builder.config(conf=conf).getOrCreate()
+    print("Spark Session Started")
+    return spark
 
 # create schema/namespaece in nessie catalog
-spark.sql("create schema if not exists nessie.db")
+def create_schema(spark, schema_query):
+    try:
+        spark.sql(schema_query)
+        return True, None
+    except Exception as err:
+        return False, err
 
 # Extract - read events from Kafka
-df = (
-    spark.readStream.format("kafka")
-    .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
-    .option("subscribe", KAFKA_TOPIC_NAME)
-    .option("startingOffsets", "earliest")
-    .load()
-)
+def read_stream(spark):
+    df = (
+        spark.readStream.format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
+        .option("subscribe", KAFKA_TOPIC_NAME)
+        .option("startingOffsets", "earliest")
+        .load()
+    )
+    return df
 
 # Transform - transform events to columns
-parsed_df = (
-    df.selectExpr("CAST(value AS STRING)")
+def transform_df(df):
+    parsed_df = (
+        df.selectExpr("CAST(value AS STRING)")
     .select(from_json("value", schema).alias("data"))
     .select("data.*")
-)
+    )
+    return parsed_df
 
 # Load - load events to iceberg tables
-query = (df.writeStream.format("iceberg")
-    .outputMode("append")
-    .option(
-        "checkpointLocation",
-        "file:///home/zmwaris1/Documents/my_files/ETL-Project/checkpoint",
-    ).trigger(once=True)
-    .toTable("nessie.db.raw_user_events")
-)
+def write_data(df):
+    try:
+        query = (df.writeStream.format("iceberg")
+            .outputMode("append")
+            .option(
+                "checkpointLocation",
+                "file:///home/zmwaris1/Documents/my_files/ETL-Project/checkpoint",
+            ).trigger(once=True)
+            .toTable("nessie.db.raw_user_events")
+        )
 
-query.awaitTermination()
+        query.awaitTermination()
+        return True, None
+    except Exception as e:
+        return False, e
+    
+
+if __name__ == "__main__":
+    spark = spark_session(conf=conf)
+    schema_query = "create schema if not exists nessie.db"
+    bool_value, err = create_schema(spark=spark, schema_query=schema_query)
+    if err != None:
+        print(f"Error while creating schema \n {err}")
+    else:
+        df = read_stream(spark=spark)
+        transformed_df = transform_df(df)
+        val, err = write_data(transformed_df)
+        if err != None:
+            print(f"Error while writing data \n {err}")
+    
